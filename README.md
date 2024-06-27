@@ -24,3 +24,5 @@ Please make sure to update tests as appropriate.
 
 License
 [MIT](https://github.com/0kan12/roapi/blob/main/LICENSE)
+
+More information about RoAPI : [click-here](https://betas.gitbook.io)
