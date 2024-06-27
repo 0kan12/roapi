@@ -1,83 +1,89 @@
 import requests
 import time
 
-useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"
-authurl = 'https://auth.roblox.com/v2/logout'
-class new_request:
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36"
+AUTH_URL = 'https://auth.roblox.com/v2/logout'
+
+class RobloxRequest:
     def __init__(self, cookie: str, url: str, data=None, method="get"):
         self.cookie = cookie
         self.url = url
         self.data = data
         self.method = method
+        self.session = requests.Session()
         self.response = None
         self.send_request()
     
     def send_request(self):
         """
-        HTTP isteği gönderir.
+        Sends HTTP request.
         """
         try:
-            request_func = getattr(requests, self.method.lower())
-            self.response = request_func(self.url, params=self.data, data=self.data, headers=self.headers, cookies=self.cookies)
+            request_func = getattr(self.session, self.method.lower())
+            headers = self.get_headers()
+            cookies = self.get_cookies()
+            self.response = request_func(self.url, data=self.data, headers=headers, cookies=cookies)
+            self.response.raise_for_status()  # Raise error for bad status codes
         except requests.exceptions.RequestException as e:
             print(f"Request Error: {e}")
     
-    def headers(self):
+    def get_headers(self):
         """
-        HTTP başlık bilgilerini döndürür.
+        Returns HTTP headers.
         """
-        token = token_response = requests.post(authurl, headers={'User-Agent': useragent}, cookies=self.cookies()).headers.get('x-csrf-token', '')
+        token = self.session.post(AUTH_URL, headers={'User-Agent': USER_AGENT}, cookies=self.get_cookies()).headers.get('x-csrf-token', '')
         return {"X-CSRF-TOKEN": token} if token else {}
     
-    def cookies(self):
+    def get_cookies(self):
         """
-        HTTP çerez bilgilerini döndürür.
+        Returns HTTP cookies.
         """
         return {".ROBLOSECURITY": self.cookie}
     
-    def json(self):
+    def get_json(self):
         """
-        Yanıtı JSON formatına dönüştürür.
+        Converts response to JSON format.
         """
         if self.response:
             return self.response.json()
         else:
             return None
-class delete1:
+
+class AssetManager:
     def __init__(self, cookie: str):
         self.cookie = cookie
     
-    def delete_asset(self, assetid):
+    def delete_asset(self, asset_id):
         """
-        Roblox envanterinden bir asset'i siler.
+        Deletes an asset from Roblox inventory.
         """
         url = f"https://www.roblox.com/asset/delete-from-inventory"
-        data = {"assetId": assetid}
-        new_request(self.cookie, url, data, "post")
-        print("Item silindi")
+        data = {"assetId": asset_id}
+        RobloxRequest(self.cookie, url, data, "post")
+        print("Item deleted")
     
-    def delete_pass(self, passid):
+    def revoke_game_pass(self, pass_id):
         """
-        Roblox oyun geçişini (gamepass) iptal eder.
+        Revokes a Roblox game pass.
         """
         url = f"https://www.roblox.com/game-pass/revoke"
-        data = {"id": passid}
-        new_request(self.cookie, url, data, "post")
+        data = {"id": pass_id}
+        RobloxRequest(self.cookie, url, data, "post")
 
-class bilgi:
+class RobloxInfo:
     @staticmethod
     def get_user_id(cookie):
         """
-        Verilen çerez ile oturum açmış kullanıcının Roblox ID'sini döndürür.
+        Returns the Roblox ID of the user logged in with the given cookie.
         """
         url = "https://users.roblox.com/v1/users/authenticated"
-        response = new_request(cookie, url, {}, "get")
-        return response.json()['id']
+        response = RobloxRequest(cookie, url, {}, "get")
+        return response.get_json()['id']
 
     @staticmethod
     def get_info_request_url(type: str, id: int):
         """
-        Belirli bir asset veya pass için bilgi istek URL'si oluşturur.
+        Generates the info request URL for a specific asset or pass.
         """
         if type == "pass":
             return f"https://apis.roblox.com/game-passes/v1/game-passes/{id}/product-info"
@@ -87,38 +93,41 @@ class bilgi:
     @staticmethod
     def get_info(id: int, type: str):
         """
-        Belirtilen ID ve tür için bilgileri getirir (ProductId, Creator Id, PriceInRobux).
+        Retrieves information for the specified ID and type (ProductId, Creator Id, PriceInRobux).
         """
-        url = bilgi.get_info_request_url(type, id)
+        url = RobloxInfo.get_info_request_url(type, id)
         response = requests.get(url)
+        response.raise_for_status()
         data = response.json()
         return [data['ProductId'], data['Creator']['Id'], data['PriceInRobux']]
-    
 
     @staticmethod
     def get_user_id_by_username(username):
         """
-        Verilen kullanıcı adına sahip kullanıcının Roblox ID'sini döndürür.
+        Returns the Roblox ID of the user with the given username.
         """
         API_ENDPOINT = "https://users.roblox.com/v1/usernames/users"
         payload = {'usernames': [username]}
         response = requests.post(API_ENDPOINT, json=payload)
+        response.raise_for_status()
         return response.json()['data'][0]['id']
     
     @staticmethod
     def get_gamepasses(username):
         """
-        Verilen kullanıcının oyun geçişlerini (pass) listeler.
+        Lists game passes for the given user.
         """
-        user_id = bilgi.get_user_id_by_username(username)
+        user_id = RobloxInfo.get_user_id_by_username(username)
         url = f"https://games.roblox.com/v2/users/{user_id}/games?accessFilter=Public&limit=50"
         response = requests.get(url)
+        response.raise_for_status()
         ids = [game['id'] for game in response.json()['data']]
         
         gamepasses = []
         for universe_id in ids:
             url = f'https://games.roblox.com/v1/games/{universe_id}/game-passes?limit=100&sortOrder=Asc'
             response = requests.get(url)
+            response.raise_for_status()
             for gamepass in response.json()['data']:
                 if gamepass['price'] is not None:
                     gamepasses.append([gamepass['id'], gamepass['price']])
@@ -129,42 +138,42 @@ class Buyer:
     def __init__(self, cookie: str):
         self.cookie = cookie
     
-    def buy(self, delete: bool, id: int, type: str):
+    def buy(self, delete_after_purchase: bool, id: int, type: str):
         """
-        Belirtilen asset veya pass'i satın alır.
+        Buys the specified asset or pass.
         """
-        info = bilgi.get_info(id, type)
+        info = RobloxInfo.get_info(id, type)
         data = {"expectedCurrency": 1, "expectedPrice": info[2], "expectedSellerId": info[1]}
         url = f"https://economy.roblox.com/v1/purchases/products/{info[0]}"
-        response = new_request(self.cookie, url, data, "post")
-        print(response.content)
+        response = RobloxRequest(self.cookie, url, data, "post")
+        print(response.get_json())
         
-        if delete:
+        if delete_after_purchase:
             if type == "pass":
-                delete1(self.cookie).delete_pass(id)
+                AssetManager(self.cookie).revoke_game_pass(id)
             elif type == "asset":
-                delete1(self.cookie).delete_asset(id)
+                AssetManager(self.cookie).delete_asset(id)
     
-    def RobuxAmount(self):
+    def get_robux_amount(self):
         """
-        Kullanıcının Robux miktarını döndürür.
+        Returns the user's Robux amount.
         """
-        url = f"https://economy.roblox.com/v1/users/{bilgi.get_user_id(self.cookie)}/currency"
-        response = new_request(self.cookie, url, {}, "get")
-        print(response.json())
-        return response.json()["robux"]
+        url = f"https://economy.roblox.com/v1/users/{RobloxInfo.get_user_id(self.cookie)}/currency"
+        response = RobloxRequest(self.cookie, url, {}, "get")
+        print(response.get_json())
+        return response.get_json()["robux"]
     
-    def AutoBuy(self, id: int, type: str, amount: int, cooldown_time: int):
+    def autobuy(self, id: int, type: str, amount: int, cooldown_time: int):
         """
-        Belirtilen miktar ve zaman aralığıyla otomatik alım yapar.
+        Automatically buys with the specified amount and cooldown time.
         """
         for _ in range(amount):
             time.sleep(cooldown_time)
             self.buy(True, id, type)
     
-    def BuyEnteredPasses(self, *pass_ids: int):
+    def buy_entered_passes(self, *pass_ids: int):
         """
-        Belirtilen gamepassleri satın alır.
+        Buys the specified game passes.
         """
         for pass_id in pass_ids:
             try:
@@ -175,10 +184,10 @@ class Buyer:
     
     def donate(self, username, amount):
         """
-        Verilen kullanıcıya belirtilen miktarda bağış yapar.
+        Donates the specified amount to the given user.
         """
         total_donation = 0
-        for gpass in bilgi.get_gamepasses(username):
+        for gpass in RobloxInfo.get_gamepasses(username):
             if total_donation + gpass[1] <= amount:
                 total_donation += gpass[1]
                 self.buy(True, gpass[0], "pass")
@@ -186,71 +195,64 @@ class Buyer:
         if total_donation == amount:
             return "success"
         else:
-            return f"error: Uygun geçiş(ler) bulunamadı. Atılan: {total_donation}, İstenen: {amount}"
+            return f"error: Suitable passes not found. Given: {total_donation}, Required: {amount}"
 
-class pass_creator:
+class GamePassCreator:
     def __init__(self, cookie: str):
         self.cookie = cookie
     
-    def do_offsale(self, passid):
+    def take_off_sale(self, pass_id):
         """
-        Belirtilen gamepass  satıştan kaldırır.
+        Takes the specified game pass off sale.
         """
-        url = f"https://apis.roblox.com/game-passes/v1/game-passes/{passid}/details"
+        url = f"https://apis.roblox.com/game-passes/v1/game-passes/{pass_id}/details"
         data = {"IsForSale": False}
-        new_request(self.cookie, url, data, "post")
+        RobloxRequest(self.cookie, url, data, "post")
     
-    def pass_creator(self, amount):
+    def create_pass(self, amount):
         """
-        Yeni bir gamepass oluşturur ve belirtilen fiyatla satışa çıkarır.
+        Creates a new game pass and puts it on sale with the specified price.
         """
         url = "https://apis.roblox.com/game-passes/v1/game-passes"
-        data = {"Name": "thanks :)", "UniverseId": "4783339527"}
-        response = new_request(self.cookie, url, data, "post")
+        data = {"Name": "Thanks :)", "UniverseId": "4783339527"}
+        response = RobloxRequest(self.cookie, url, data, "post")
         
         try:
-            pass_id = response.json()['gamePassId']
+            pass_id = response.get_json()['gamePassId']
             url = f"https://apis.roblox.com/game-passes/v1/game-passes/{pass_id}/details"
             data = {"IsForSale": True, "Price": amount}
-            response = new_request(self.cookie, url, data, "post")
-            print(response.content)
+            response = RobloxRequest(self.cookie, url, data, "post")
+            print(response.get_json())
             return str(pass_id)
         except:
-            return "hata"
+            return "error"
 
-class Groups:
+class RobloxGroups:
     def __init__(self, cookie: str, group_id: int):
         self.cookie = cookie
         self.group_id = group_id
     
-    def Summary(self, time: str = "day"):
+    def revenue_summary(self, time: str = "day"):
         """
-        Grup gelir özetini alır.
+        Retrieves group revenue summary.
         """
-        data={}
         url = f"https://economy.roblox.com/v1/groups/{self.group_id}/revenue/summary/{time}"
-        response = new_request(self.cookie, url, {}, "get").json()
-        data["pendingRobux"]=response["pendingRobux"]
-        data["itemSaleRobux"]=response["itemSaleRobux"]
-        return data
-    def Funds(self):
-        """
-        Grupta bulunan robux miktarını gösterir
-        """
-        url = f"https://economy.roblox.com/v1/groups/{self.group_id}/currency"
-        response = new_request(self.cookie, url, {}, "get").json()
+        response = RobloxRequest(self.cookie, url).get_json()
         return response
-    def GiveRank(self,role_id,username):
+    
+    def give_rank(self, role_id, username):
         """
-        belirtilen kullanıcıya belirtilen rolü verir
+        Gives the specified role to the specified user.
         """
-        url=f"https://groups.roblox.com/v1/groups/{self.group_id}/users/{bilgi.get_user_id_by_username(username)}"
-        data={"roleId":role_id}
-        response=new_request(self.cookie,url,data,"patch")
-        return response.json()
-    def Roles(self):
+        url = f"https://groups.roblox.com/v1/groups/{self.group_id}/users/{RobloxInfo.get_user_id_by_username(username)}"
+        data = {"roleId": role_id}
+        response = RobloxRequest(self.cookie, url, data, "post")
+        return response.get_json()
+    
+    def list_roles(self):
         """
-        belirtilen gruptaki rolleri sıralar
+        Lists roles in the group.
         """
-
-
+        url = f"https://groups.roblox.com/v1/groups/{self.group_id}/roles"
+        response = RobloxRequest(self.cookie, url).get_json()
+        return response['roles']
